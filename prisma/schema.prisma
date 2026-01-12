@@ -1,0 +1,359 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String         @id @default(uuid())
+  email            String         @unique
+  password         String
+  name             String
+  bio              String?
+  profileImage     String?
+  role             Role           @default(STUDENT)
+  phone            String?
+  location         String?
+  timezone         String         @default("Asia/Kolkata")
+  hourlyRate       Float?
+  experience       Int?
+  verified         Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  availability     Availability[]
+  certificates     Certificate[]
+  studentLessons   Lesson[]       @relation("StudentLessons")
+  teacherLessons   Lesson[]       @relation("TeacherLessons")
+  messages         Message[]
+  notifications    Notification[]
+  paymentsMade     Payment[]      @relation("PaymentMaker")
+  paymentsReceived Payment[]      @relation("PaymentReceiver")
+  reviewsGiven     Review[]       @relation("ReviewGiver")
+  reviewsReceived  Review[]       @relation("ReviewReceiver")
+  badges           UserBadge[]
+  skillsToLearn    Skill[]        @relation("StudentSkills")
+  skillsToTeach    Skill[]        @relation("TeacherSkills")
+  timeSlots        TimeSlot[]
+  blockedTimes     BlockedTime[]
+  bookingSettings  BookingSettings?
+
+  @@index([email])
+}
+
+model Skill {
+  id          String   @id @default(uuid())
+  name        String
+  category    String
+  description String?
+  createdAt   DateTime @default(now())
+  lessons     Lesson[]
+  students    User[]   @relation("StudentSkills")
+  teachers    User[]   @relation("TeacherSkills")
+
+  @@unique([name, category])
+  @@index([category])
+}
+
+model Lesson {
+  id                 String       @id @default(uuid())
+  teacherId          String
+  studentId          String
+  skillId            String
+  title              String
+  description        String?
+  scheduledAt        DateTime
+  duration           Int
+  status             LessonStatus @default(PENDING)
+  meetingLink        String?
+  recordingUrl       String?
+  transcriptUrl      String?
+  price              Float
+  currency           String       @default("INR")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  skill              Skill        @relation(fields: [skillId], references: [id])
+  student            User         @relation("StudentLessons", fields: [studentId], references: [id])
+  teacher            User         @relation("TeacherLessons", fields: [teacherId], references: [id])
+  payment            Payment?
+  review             Review?
+  timeSlot         TimeSlot?
+
+  @@index([teacherId, scheduledAt])
+  @@index([studentId, scheduledAt])
+  @@index([status])
+}
+
+// ==========================================
+// AVAILABILITY MODEL - Enhanced Version
+// ==========================================
+model Availability {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Weekly Schedule
+  dayOfWeek   Int      // 0 = Sunday, 6 = Saturday
+  startTime   String   // "09:00" in 24-hour format
+  endTime     String   // "17:00" in 24-hour format
+  
+  // Status
+  isAvailable Boolean  @default(true)
+  isRecurring Boolean  @default(true) // Repeats every week
+  
+  // Timezone
+  timezone    String   @default("Asia/Kolkata")
+  
+  // Override for specific dates
+  overrideDate DateTime? // If set, this applies only to this date
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId, dayOfWeek])
+  @@index([userId, isAvailable])
+}
+
+// ==========================================
+// TIME SLOT MODEL - Bookable time slots
+// ==========================================
+model TimeSlot {
+  id          String       @id @default(uuid())
+  teacherId   String
+  teacher     User         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  // Time details
+  startTime   DateTime
+  endTime     DateTime
+  duration    Int          // in minutes (30, 60, 90, 120)
+  
+  // Status
+  status      SlotStatus   @default(AVAILABLE)
+  
+  // Booking reference (if booked)
+  lessonId    String?      @unique
+  lesson      Lesson?      @relation(fields: [lessonId], references: [id])
+  
+  // Pricing
+  price       Float?       // Can override teacher's default rate
+  
+  // Metadata
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  @@index([teacherId, startTime])
+  @@index([teacherId, status])
+  @@index([startTime, status])
+}
+
+// ==========================================
+// BLOCKED TIME MODEL - Teacher unavailability
+// ==========================================
+model BlockedTime {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Time range
+  startTime   DateTime
+  endTime     DateTime
+  
+  // Reason
+  reason      String?  // "Vacation", "Personal", "Holiday", etc.
+  
+  // Type
+  isRecurring Boolean  @default(false)
+  recurrenceRule String? // RRULE format (e.g., "FREQ=WEEKLY;BYDAY=SA,SU")
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId, startTime])
+}
+
+// ==========================================
+// BOOKING BUFFER MODEL - Time between lessons
+// ==========================================
+model BookingSettings {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Buffer time
+  bufferMinutes     Int      @default(15) // Break between lessons
+  
+  // Advance booking
+  minAdvanceHours   Int      @default(24)  // Minimum hours in advance
+  maxAdvanceDays    Int      @default(90)  // Maximum days in advance
+  
+  // Session settings
+  allowedDurations  Int[]    @default([30, 60, 90, 120]) // Allowed lesson durations
+  
+  // Auto-accept
+  autoAccept        Boolean  @default(false) // Auto-accept bookings
+  
+  // Cancellation policy
+  cancellationHours Int      @default(24) // Hours before lesson
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum SlotStatus {
+  AVAILABLE
+  BOOKED
+  BLOCKED
+  EXPIRED
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  lessonId   String   @unique
+  giverId    String
+  receiverId String
+  rating     Int
+  knowledge  Int?
+  clarity    Int?
+  patience   Int?
+  timing     Int?
+  comment    String?
+  isVerified Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  giver      User     @relation("ReviewGiver", fields: [giverId], references: [id])
+  lesson     Lesson   @relation(fields: [lessonId], references: [id])
+  receiver   User     @relation("ReviewReceiver", fields: [receiverId], references: [id])
+
+  @@index([receiverId, rating])
+}
+
+model Payment {
+  id            String          @id @default(uuid())
+  lessonId      String          @unique
+  payerId       String
+  receiverId    String
+  amount        Float
+  platformFee   Float
+  teacherAmount Float
+  currency      String          @default("INR")
+  provider      PaymentProvider
+  transactionId String          @unique
+  status        PaymentStatus   @default(PENDING)
+  createdAt     DateTime        @default(now())
+  paidAt        DateTime?
+  refundedAt    DateTime?
+  lesson        Lesson          @relation(fields: [lessonId], references: [id])
+  payer         User            @relation("PaymentMaker", fields: [payerId], references: [id])
+  receiver      User            @relation("PaymentReceiver", fields: [receiverId], references: [id])
+
+  @@index([payerId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  link      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+}
+
+model Badge {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String
+  icon        String
+  criteria    String
+  xpReward    Int         @default(0)
+  createdAt   DateTime    @default(now())
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id       String   @id @default(uuid())
+  userId   String
+  badgeId  String
+  earnedAt DateTime @default(now())
+  badge    Badge    @relation(fields: [badgeId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+model Certificate {
+  id             String   @id @default(uuid())
+  userId         String
+  skillName      String
+  hoursCompleted Int
+  certificateUrl String
+  verificationId String   @unique
+  issuedAt       DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  content    String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  sender     User     @relation(fields: [senderId], references: [id])
+
+  @@index([senderId, receiverId])
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  BOTH
+  ADMIN
+}
+
+enum LessonStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  RAZORPAY
+  STRIPE
+  PAYPAL
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum NotificationType {
+  LESSON_BOOKED
+  LESSON_CONFIRMED
+  LESSON_REMINDER
+  LESSON_CANCELLED
+  REVIEW_RECEIVED
+  PAYMENT_RECEIVED
+  BADGE_EARNED
+  MESSAGE_RECEIVED
+}
