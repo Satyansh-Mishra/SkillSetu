@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId')
     
     // If userId not provided, must be authenticated
-    let targetUserId = userId
+    let targetUserId = userId  as string
     if (!userId) {
       const currentUser = requireAuth(request)
       targetUserId = currentUser.userId
