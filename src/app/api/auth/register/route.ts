@@ -1,47 +1,32 @@
-/**
- * USER REGISTRATION ENDPOINT
- * 
- * POST /api/auth/register
- * 
- * What it does:
- * 1. Receives email, password, name from user
- * 2. Validates the input
- * 3. Checks if email already exists
- * 4. Hashes the password
- * 5. Creates user in database
- * 6. Returns JWT token
- */
-
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { hashPassword, createToken } from '@/lib/auth'
-import { validate, registerSchema } from '@/lib/validators'
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { hashPassword, createToken } from '@/lib/auth';
+import { validate, registerSchema } from '@/lib/validators';
+import { ZodError } from 'zod'; // Make sure this is imported
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Parse request body
-    const body = await request.json()
+    const body = await request.json();
     
-    // 2. Validate input
-    const validatedData = validate(registerSchema, body)
+    // Validate input
+    const validatedData = validate(registerSchema, body);
     
-    // console.log(validatedData)
-    // 3. Check if user already exists
+    // Check existing user
     const existingUser = await prisma.user.findUnique({
       where: { email: validatedData.email },
-    })
+    });
     
     if (existingUser) {
       return NextResponse.json(
         { error: 'Email already registered' },
         { status: 400 }
-      )
+      );
     }
     
-    // 4. Hash password
-    const hashedPassword = await hashPassword(validatedData.password)
+    // Hash password
+    const hashedPassword = await hashPassword(validatedData.password);
     
-    // 5. Create user in database
+    // Create user
     const user = await prisma.user.create({
       data: {
         email: validatedData.email,
@@ -55,39 +40,39 @@ export async function POST(request: NextRequest) {
         name: true,
         role: true,
         createdAt: true,
-        // Don't return password!
       },
-    })
+    });
     
-    // 6. Generate JWT token
+    // Generate Token
     const token = createToken({
       userId: user.id,
       email: user.email,
       role: user.role,
-    })
+    });
     
-    // 7. Return success response
     return NextResponse.json({
       message: 'Registration successful',
       user,
       token,
-    }, { status: 201 })
+    }, { status: 201 });
     
   } catch (error: any) {
-    console.error('Registration error:', error)
+    console.error('Registration error:', error);
     
-    // Handle validation errors
-    if (error.name === 'ZodError') {
+    // ✅ FIX: Use 'error.issues' instead of 'error.errors'
+    if (error instanceof ZodError) {
       return NextResponse.json(
-        { error: 'Validation failed', details: error.errors },
+        { 
+          error: 'Validation failed', 
+          details: error.issues // <--- CHANGED THIS
+        },
         { status: 400 }
-      )
+      );
     }
     
-    // Generic error
     return NextResponse.json(
-      { error: 'Registration failed' },
+      { error: 'Registration failed. Please try again.' },
       { status: 500 }
-    )
+    );
   }
 }

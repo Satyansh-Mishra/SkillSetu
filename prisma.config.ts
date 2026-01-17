@@ -11,6 +11,6 @@ export default defineConfig({
     seed: "tsx prisma/seed-skills.ts"
   },
   datasource: {
-    url: databaseUrl,
+    url: process.env.DATABASE_URL_DEVELOPMENT!,
   },
 });
